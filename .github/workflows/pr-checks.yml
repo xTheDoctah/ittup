@@ -9,6 +9,30 @@ permissions:
   contents: read
 
 jobs:
+  # main receives only an rc branch (X.Y.Z-rcN, cut from dev), a hotfix (hotfix/*), release-please's release PR
+  # and nothing else; every other PR targets dev (RELEASING.md). The label main-exception, set by a maintainer,
+  # lets a PR through (e.g. a broken workflow on main)
+  target-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the base and head branches
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          [ "$BASE" = main ] || exit 0
+          if grep -qE '(^|,)main-exception(,|$)' <<<"$LABELS"; then
+            echo "::warning::main-exception: this PR goes to main without passing through dev and an rc"
+            exit 0
+          fi
+          if [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] && [[ "$HEAD_REF" =~ ^([0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+|hotfix/.+|release-please--.+)$ ]]; then
+            exit 0
+          fi
+          echo "::error::PRs to main come only from an rc branch (X.Y.Z-rcN) or a hotfix (hotfix/*). Change the base of this PR to dev"
+          exit 1
+
   # release-please picks the version from the commit subjects on main (CLAUDE.md): the PR title (the subject
   # of a squash merge) and every commit (kept by a merge commit) must be Conventional Commits
   conventional-commits:
@@ -78,7 +102,8 @@ jobs:
           ADDITIONS: ${{ github.event.pull_request.additions }}
           DELETIONS: ${{ github.event.pull_request.deletions }}
         run: |
-          case "$HEAD_REF" in release-please--*) exit 0 ;; esac
+          # Release PRs and rc branches carry many issues: no single "Closes #N"
+          case "$HEAD_REF" in release-please--*|[0-9]*-rc[0-9]*) exit 0 ;; esac
           # Every change starts from an issue, except typos and trivial fixes
           if ! grep -qiE '(close[sd]?|fix(e[sd])?|resolve[sd]?) +#[0-9]+' <<<"$BODY"; then
             echo "::warning::No 'Closes #N' in the PR description: link the issue this PR resolves"
