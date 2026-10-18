@@ -1,9 +1,10 @@
 name: Publish
 
+# main only receives an rc branch (X.Y.Z-rcN) or a hotfix (hotfix/*), always with a merge commit, so release-please
+# still finds every feat:/fix: commit made on dev (RELEASING.md)
 on:
   push:
-    # release/X.Y: patch releases of an older line while main has unreleased changes (RELEASING.md)
-    branches: [main, "release/**"]
+    branches: [main]
 
 permissions:
   contents: read
@@ -25,7 +26,6 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          target-branch: ${{ github.ref_name }}
 
   build:
     needs: release-please
@@ -53,7 +53,7 @@ jobs:
 
       # The release should be the code of its last rc: only the version and the changelog may differ.
       # A warning, so a release without an rc still goes out; the repository variable STRICT_RELEASE='true'
-      # makes it an error
+      # makes it an error. A patch release without an rc is a hotfix: only a notice
       - name: Check the release is its last rc
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
@@ -61,7 +61,10 @@ jobs:
         run: |
           level=warning; [ "$STRICT" = true ] && level=error
           rc=$(git tag --list "${TAG}rc*" | sort -V | tail -1)
-          if [ -z "$rc" ]; then
+          if [ -z "$rc" ] && [ "${TAG##*.}" != 0 ]; then
+            echo "::notice::$TAG has no rc: a hotfix"
+            exit 0
+          elif [ -z "$rc" ]; then
             echo "::$level::$TAG has no rc tag (${TAG}rc1, ...): it is released without a release candidate"
           elif ! git diff --quiet "$rc" HEAD -- . ':(exclude)CHANGELOG.md' ':(exclude).release-please-manifest.json' ':(exclude)pyproject.toml' \
                || git diff "$rc" HEAD -- pyproject.toml | grep -E '^[-+][^-+]' | grep -qvE '^[-+]version = '; then
@@ -142,3 +145,74 @@ jobs:
         run: |
           cp -r tests/smoke tests/conftest.py "$RUNNER_TEMP/"
           cd "$RUNNER_TEMP" && pytest -v smoke
+
+  # main goes back into dev after every change (rc merged, release, hotfix), so dev always contains main.
+  # A PR, because dev accepts only PRs: merge it with a merge commit, never squash
+  back-merge:
+    needs: release-please
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open the PR main → dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! git rev-parse -q --verify origin/dev >/dev/null; then
+            echo "No dev branch yet"
+            exit 0
+          fi
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "dev already contains main"
+            exit 0
+          fi
+          if [ -n "$(gh pr list --base dev --head main --state open --json number --jq '.[].number')" ]; then
+            echo "The back-merge PR is already open"
+            exit 0
+          fi
+          gh pr create --base dev --head main --label chore \
+            --title "chore: back-merge main into dev" \
+            --body "main changed (rc merged, release or hotfix): bring it back into dev. **Merge with a merge commit, not squash**, so the history of main stays in dev."
+
+  # The milestone of a release is done: close it and move what is still open to the next milestone (or out of
+  # any milestone, back to the backlog), with a comment. The tracking issue (label milestone) stays: it holds
+  # the closing checklist
+  milestone:
+    needs: [release-please, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Close the milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          milestones=$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=open&sort=due_on&direction=asc&per_page=100")
+          number=$(jq -r ".[] | select(.title == \"$TAG\") | .number" <<<"$milestones")
+          if [ -z "$number" ]; then
+            echo "::notice::No open milestone $TAG"
+            exit 0
+          fi
+          next=$(jq -r ".[] | select(.title != \"$TAG\") | .number" <<<"$milestones" | head -1)
+          next_title=$(jq -r ".[] | select(.number == ${next:-0}) | .title" <<<"$milestones")
+          for issue in $(gh api "repos/$GITHUB_REPOSITORY/issues?milestone=$number&state=open&per_page=100" --paginate \
+              --jq '.[] | select([.labels[].name] | index("milestone") | not) | .number'); do
+            if [ -n "$next" ]; then
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$issue" -F milestone="$next" --silent
+              gh api "repos/$GITHUB_REPOSITORY/issues/$issue/comments" -f body="Not done in $TAG: moved to the milestone $next_title. Re-plan it at the next triage." --silent
+            else
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$issue" --input - --silent <<<'{"milestone": null}'
+              gh api "repos/$GITHUB_REPOSITORY/issues/$issue/comments" -f body="Not done in $TAG and no next milestone yet: back to the backlog. Re-plan it at the next triage." --silent
+            fi
+            echo "#$issue → ${next_title:-backlog}"
+          done
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/milestones/$number" -f state=closed --silent
+          echo "Milestone $TAG closed"
