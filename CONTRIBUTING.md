@@ -7,7 +7,7 @@ tests and the rules for AI. Releases and distribution channels are in [RELEASING
 ## Local setup
 
 ```bash
-git clone https://github.com/xTheDoctah/ittup.git && cd ittup
+git clone https://github.com/xTheDoctah/ittup.git && cd ittup   # the default branch is dev
 python -m venv .venv && . .venv/bin/activate
 pip install -e . pytest pytest-cov pre-commit
 pre-commit install --hook-type pre-commit --hook-type pre-push
@@ -39,8 +39,24 @@ and **every promotion (dev → rc → release) needs the ok of both**.
 
 ## Milestones
 
-A milestone is a target version (`1.13.0`) with: a goal (1-2 sentences), feature freeze and release dates,
-an owner and the exit criteria below. Recommended length: 2-4 weeks.
+**One milestone = one new version.** Every version except a hotfix is the result of a milestone, and every rc
+belongs to the milestone of its version. A milestone is created **at the start** of its development cycle, not
+just before the rc, with: a goal (1-2 sentences), feature freeze and release dates, an owner and the exit criteria
+below. Recommended length: 2-4 weeks.
+
+On GitHub (Issues → Milestones):
+
+1. Create the milestone named exactly as the version, `X.Y.0` (no `v`), with the release date as due date and in
+   the description the goal, the freeze date and the owner.
+2. Open its tracking issue with the **Milestone** form and assign it to the milestone: it holds the checklists.
+3. At triage, assign the issues to the milestone. Name milestones `X.Y.0`: release-please picks the version from
+   the commits, and any `feat:` makes the next version a minor one.
+4. `rc.yml` refuses to cut an rc when the milestone doesn't exist or still has open P0/P1 issues or
+   blocking/critical bugs.
+5. At the release, `publish.yml` closes the milestone and moves its open issues to the next milestone (by due
+   date) or back to the backlog, with a comment.
+
+Hotfixes don't wait for a milestone. To track one, open a small milestone `X.Y.Z` and close it with the hotfix.
 
 ```
 Planned → In development → Feature freeze → Release candidate → Released → Closed
@@ -50,8 +66,8 @@ Planned → In development → Feature freeze → Release candidate → Released
 |---|---|---|
 | Planned | – | Triage and priorities |
 | In development | dev | Features, fixes, refactoring |
-| Feature freeze | dev → rc | Only fixes, tests, docs |
-| Release candidate | rc | Only blocking/critical fixes |
+| Feature freeze | dev → rc | Branch `X.Y.0-rc1` cut from dev; on dev only fixes, tests, docs |
+| Release candidate | rc | Only blocking/critical fixes, on dev, then a new rc from dev |
 | Released | release | Nothing: fixes go to a patch |
 | Closed | – | Retrospective done |
 
@@ -121,8 +137,8 @@ For `ai-agent` issues it is **binding**: an agent works only on `ready` issues.
 ### Linking
 
 - The branch has the issue number: `feat/123-export-csv`.
-- The PR description has `Closes #123` (CI warns without it). For fixes on `release/*`, close the issue by
-  hand after the cherry-pick to main.
+- The PR description has `Closes #123` (CI warns without it): the issue closes when the PR is merged into dev,
+  the default branch. A hotfix PR to main closes its issue too only after the back-merge; close it by hand.
 - One assignee per issue; when an AI agent works on it, the assignee is the person guiding it.
 
 ### Maintenance (automated by `stale.yml`)
@@ -157,18 +173,22 @@ of truth for status and priority; the `P*` labels stay for filters and automatio
 
 | Prefix | Use | Example |
 |---|---|---|
-| `main` | Development, dev channel | – |
-| `release/X.Y` | Patch releases of an older line (RELEASING.md) | `release/1.12` |
-| `hotfix/X.Y.Z` | Urgent fix for a released version | `hotfix/1.12.2` |
+| `dev` | Development, dev channel, **default branch**: every work PR targets it | – |
+| `X.Y.Z-rcN` | Release candidate cut from dev, never changed, merged into main when OK | `1.13.0-rc2` |
+| `main` | Released code only: receives rc branches, hotfixes and release-please's release PR | – |
+| `hotfix/X.Y.Z` | Urgent fix, from main to main (RELEASING.md) | `hotfix/1.12.2` |
 | `feat/<issue>-<descr>` | Feature | `feat/123-export-csv` |
 | `fix/<issue>-<descr>` | Bug fix | `fix/140-crash-config` |
 | `chore/`, `docs/`, `ci/`, `test/` | Maintenance, docs | `chore/bump-ruff` |
 | `ai/<issue>-<descr>` | Branches created by AI agents (`claude/*` too) | `ai/151-add-tests` |
 
 - Head branches are **deleted automatically at merge**.
-- `main` and `release/*` are protected (no direct push, no deletion); tags are protected (no update, no deletion).
+- `dev` and `main` are protected (no direct push, no force push, no deletion; main only with merge commits); rc
+  branches can't be changed after they are cut; tags can't be updated or deleted (except `archive/*`).
+- Merging into dev: squash (the PR title is the commit) or merge commit. Merging into main and the back-merge
+  main → dev: **always a merge commit**, never squash, so release-please finds every commit of dev on main.
 - **Obsolete branches** (`prune-branches.yml`, every Monday): a branch is deleted only when it is **merged
-  into main and has had no commits for more than 3 months** (90 days). Branches that aren't merged are never
+  into dev or main and has had no commits for more than 3 months** (90 days). Branches that aren't merged are never
   deleted automatically: the ones inactive for more than 3 months are listed in the report, to be checked by
   hand. Branches with an open PR (also one to the original repository, for a fork) or a PR labeled `keep` are
   never touched. The schedule only reports; deleting is a manual run with `dry_run` unchecked.
@@ -177,7 +197,7 @@ of truth for status and priority; the `P*` labels stay for filters and automatio
   ```bash
   git config --global fetch.prune true
   git fetch --prune --prune-tags
-  git branch --merged main | grep -vE '^\*|main|release/' | xargs -r git branch -d
+  git branch --merged origin/dev | grep -vE '^\*|main|dev' | xargs -r git branch -d
   git branch -vv | grep ': gone]'   # local branches whose remote no longer exists
   ```
 
@@ -206,15 +226,16 @@ of truth for status and priority; the `P*` labels stay for filters and automatio
 |---|---|---|---|---|
 | pre-commit / pre-push | ✓ (pre-push) | – | – | – |
 | PR | ✓ | ✓ | – | 3.11, 3.14 |
-| Push on main (dev) | ✓ | ✓ (also on the wheel) | ✓ | 3.11-3.14 |
-| rc tag | ✓ | ✓ (also on the wheel) | ✓ (also from PyPI) | 3.11-3.14 + Windows unit tests |
+| Push on dev (dev channel) | ✓ | ✓ (also on the wheel) | ✓ | 3.11-3.14 |
+| Push on main | ✓ | ✓ | – | 3.11-3.14 |
+| rc branch | ✓ | ✓ (also on the wheel) | ✓ (also from PyPI) | 3.11-3.14 + Windows unit tests |
 | Release | – (code of the rc) | – | ✓ after publishing | – |
-| Nightly on main | ✓ | ✓ | – | 3.11-3.14, latest dependencies |
+| Nightly on dev | ✓ | ✓ | – | 3.11-3.14, latest dependencies |
 
 Rules:
 
 - **Every fixed bug has a regression test** that fails before the fix.
-- Coverage: never lower than `fail_under` (raise it when main goes up); new code should be covered better
+- Coverage: never lower than `fail_under` (raise it when dev goes up); new code should be covered better
   than the rest.
 - **Flaky** tests are marked `@pytest.mark.flaky`, get a P2 issue and are fixed within the milestone.
 - No calls to real services in tests: mocks, fixtures or `tests/e2e/fake_network.py`.
@@ -248,14 +269,15 @@ they had written it by hand.
 ## External contributions
 
 ```
-Issue (feature) ──▶ discussion + ok of the team ──▶ fork ──▶ PR to main
+Issue (feature) ──▶ discussion + ok of the team ──▶ fork ──▶ PR to dev
    ──▶ labels external + needs-triage ──▶ triage ──▶ CI approved ──▶ review ──▶ merge
                                        └──▶ or closed with a reason / stale
 ```
 
 - **Features**: an issue agreed with the team first, then the PR. A feature PR without an agreed issue may be
   closed politely. **Fixes, docs, typos**: a direct PR is fine.
-- External PRs always target `main`, never `release/*` or `hotfix/*`: the team cherry-picks what an rc needs.
+- External PRs always target `dev`, never `main`, an rc branch or `hotfix/*`: the team decides what goes into
+  an rc or a hotfix.
 - First answer within 5 working days, first full review within 10. No answer from the contributor: `stale`
   after 30 days, closed after 14 more.
 - At triage the PR gets a priority, a milestone (decided by the team) and a team member who follows it.

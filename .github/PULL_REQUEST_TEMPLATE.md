@@ -1,4 +1,5 @@
-<!-- The title is a Conventional Commit: release-please uses it for the version and the changelog (CLAUDE.md).
+<!-- Work PRs target dev. Only an rc branch (X.Y.Z-rcN) or a hotfix (hotfix/*) targets main (RELEASING.md).
+     The title is a Conventional Commit: release-please uses it for the version and the changelog (CLAUDE.md).
      fix: ... (patch) · feat: ... (minor) · feat!: ... (breaking) · docs:/ci:/refactor:/chore:/test: (no release) -->
 
 Closes #

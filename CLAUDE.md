@@ -3,7 +3,8 @@
 ## Commit messages
 
 Releases are automated with release-please, which reads the commit history on `main`
-to pick the next version and write `CHANGELOG.md`. Write every commit subject as a
+to pick the next version and write `CHANGELOG.md`. Commits are made on `dev` and reach `main`
+through an rc branch merged with a merge commit, so their subjects are what release-please reads. Write every commit subject as a
 [Conventional Commit](https://www.conventionalcommits.org/):
 
 - `fix: ...` for bug fixes (patch release)
@@ -20,7 +21,10 @@ The development and release process is in `CONTRIBUTING.md` (issues, priorities,
 and `RELEASING.md` (dev, rc and release channels). The parts that matter most when you write code:
 
 - Work only from an issue with acceptance criteria; the branch is `ai/<issue>-<descr>` (or the type prefix,
-  e.g. `fix/140-crash-config`) and the PR description has `Closes #<issue>`.
+  e.g. `fix/140-crash-config`), created from `dev`, and the PR targets `dev`, never `main`. The PR description
+  has `Closes #<issue>`.
+- Never commit to an rc branch (`X.Y.Z-rcN`) or open a PR to `main`: rc branches are cut from `dev` by the
+  maintainers, and only they open the rc → main and hotfix PRs.
 - Every commit subject is a Conventional Commit (above) and is signed off: `git commit -s` (CI checks both).
 - Keep PRs under ~400 changed lines. Never merge a PR: a person reviews and merges it.
 - Every new function comes with tests; every fixed bug with a regression test that fails before the fix.
@@ -41,7 +45,7 @@ bandit -c pyproject.toml -r ittup -lll
 
 ## Don't
 
-- Don't write a dev or rc version anywhere: CI builds them from the tags (`RELEASING.md`).
+- Don't write a dev or rc version anywhere: CI builds them from the dev branch and the rc branches (`RELEASING.md`).
 - Don't raise the numbers in `.github/quality-baseline.conf` or lower `fail_under`: fix the new errors instead.
 - Don't rename the `pypi` environment in `publish.yml`: the PyPI trusted publisher depends on it.
 - Don't use `pull_request_target` in workflows.
