@@ -147,13 +147,15 @@ jobs:
           cd "$RUNNER_TEMP" && pytest -v smoke
 
   # main goes back into dev after every change (rc merged, release, hotfix), so dev always contains main.
-  # A PR, because dev accepts only PRs: merge it with a merge commit, never squash
+  # A PR, because dev accepts only PRs: merge it with a merge commit, never squash.
+  # The PR comes from a copy of main (back-merge/main), never from main itself: "Automatically delete head
+  # branches" deletes the head of a merged PR, and it once deleted main this way
   back-merge:
     needs: release-please
     if: always()
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
@@ -172,13 +174,16 @@ jobs:
             echo "dev already contains main"
             exit 0
           fi
-          if [ -n "$(gh pr list --base dev --head main --state open --json number --jq '.[].number')" ]; then
-            echo "The back-merge PR is already open"
+          branch=back-merge/main
+          # Create the copy of main, or move it forward to main (main only moves forward)
+          git push origin "origin/main:refs/heads/$branch"
+          if [ -n "$(gh pr list --base dev --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "The back-merge PR is already open: $branch now has the new commits of main"
             exit 0
           fi
-          gh pr create --base dev --head main --label chore \
+          gh pr create --base dev --head "$branch" --label chore \
             --title "chore: back-merge main into dev" \
-            --body "main changed (rc merged, release or hotfix): bring it back into dev. **Merge with a merge commit, not squash**, so the history of main stays in dev."
+            --body "main changed (rc merged, release or hotfix): bring it back into dev. **Merge with a merge commit, not squash**, so the history of main stays in dev. The branch $branch is a copy of main and is deleted after the merge."
 
   # The milestone of a release is done: close it and move what is still open to the next milestone (or out of
   # any milestone, back to the backlog), with a comment. The tracking issue (label milestone) stays: it holds
