@@ -27,7 +27,7 @@ body:
     attributes:
       label: Owner
       description: Milestone owner and release manager. The other developer is the reference reviewer.
-      placeholder: "@xTheDoctah"
+      placeholder: "@TehMaat"
     validations:
       required: true
   - type: input
