@@ -167,11 +167,11 @@ of truth for status and priority; the `P*` labels stay for filters and automatio
 
 - Head branches are **deleted automatically at merge**.
 - `main` and `release/*` are protected (no direct push, no deletion); tags are protected (no update, no deletion).
-- **Obsolete branches** (`prune-branches.yml`, every Monday): `feat/`, `fix/`, `chore/`, `docs/` warned after
-  30 days without commits, deleted after 60; `ai/*` and `claude/*` after 7 and 14; already merged: at once.
-  Branches with an open PR or a PR labeled `keep` are never touched. A branch that isn't merged is first
-  saved as the tag `archive/<branch>`. The schedule only reports; deleting is a manual run with
-  `dry_run` unchecked. `archive/*` tags older than 6 months can be removed at milestone close.
+- **Obsolete branches** (`prune-branches.yml`, every Monday): a branch is deleted only when it is **merged
+  into main and has had no commits for more than 3 months** (90 days). Branches that aren't merged are never
+  deleted automatically: the ones inactive for more than 3 months are listed in the report, to be checked by
+  hand. Branches with an open PR (also one to the original repository, for a fork) or a PR labeled `keep` are
+  never touched. The schedule only reports; deleting is a manual run with `dry_run` unchecked.
 - Local cleanup, from time to time:
 
   ```bash
@@ -289,5 +289,4 @@ milestone, owner · quality gates green · review done, authorship kept · contr
 acceptance criteria for AI items · capacity ≤ 80%, review included.
 
 **Milestone closing**: release published and installation checked · leftover items re-planned · retrospective
-(what slipped, how much AI code needed rework and why) · branch report reviewed, merged `hotfix/*` deleted,
-old `archive/*` tags evaluated · backlog idle for 6 months re-evaluated.
+(what slipped, how much AI code needed rework and why) · branch report reviewed, merged `hotfix/*` deleted · backlog idle for 6 months re-evaluated.
