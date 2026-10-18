@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.13.1](https://github.com/xTheDoctah/ittup/compare/1.13.0...1.13.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* update pillow to 12.3.0 for PYSEC-2026-3493, PYSEC-2026-3494 and PYSEC-2026-3496 ([7c35275](https://github.com/xTheDoctah/ittup/commit/7c3527573767975e6e0a6793624d5f84116a6bfb))
+* update pillow to 12.3.0 for PYSEC-2026-3493, PYSEC-2026-3494 and PYSEC-2026-3496 ([5946f22](https://github.com/xTheDoctah/ittup/commit/5946f223efb1f73943f6f820971098b4e96ed6e7))
+
+
+### Documentation
+
+* dev → rc → main flow, milestones, PyPI and TestPyPI setup, milestone issue form ([0639b1b](https://github.com/xTheDoctah/ittup/commit/0639b1bb14f99ba924ceb16096c86d7ba63266c8))
+* links, PyPI and TestPyPI setup point to TehMaat/ittup ([ea146a7](https://github.com/xTheDoctah/ittup/commit/ea146a750b80691834f70b8f52c1b7b854e66437))
+* links, PyPI and TestPyPI setup point to TehMaat/ittup ([f8846b5](https://github.com/xTheDoctah/ittup/commit/f8846b564e00ba77b6a4949a14d252b42843e9db))
+
 ## [1.13.0](https://github.com/xTheDoctah/ittup/compare/1.12.1...1.13.0) (2026-10-18)
 
 
