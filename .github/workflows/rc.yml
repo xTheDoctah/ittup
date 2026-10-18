@@ -1,20 +1,28 @@
 name: Release candidate
 
-# The rc channel: pushing a tag X.Y.ZrcN publishes that pre-release on PyPI.
-# pip installs it only with --pre (or ittup==X.Y.ZrcN), so normal users never get it by mistake.
-# Tag the commit that release-please's release PR is based on, during the feature freeze:
-#   git tag 1.13.0rc1 <commit> && git push origin 1.13.0rc1
+# The rc channel. At the feature freeze of milestone X.Y.Z, cut the branch X.Y.Z-rcN from dev:
+#   git fetch origin && git push origin origin/dev:refs/heads/1.13.0-rc1
+# This workflow checks the branch and the milestone, runs the full tests, tags X.Y.ZrcN and publishes it on
+# PyPI as a pre-release: pip installs it only with --pre, so normal users never get it by mistake.
+# An rc branch is never changed: a problem is fixed on dev and a new rc (X.Y.Z-rcN+1) is cut from dev.
 # PyPI needs a trusted publisher for this workflow (rc.yml) and the environment 'staging'.
 on:
   push:
-    tags: ["*rc*"]
+    branches: ["[0-9]+.[0-9]+.[0-9]+-rc[0-9]+"]
 
 permissions:
   contents: read
 
+concurrency:
+  group: rc-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
@@ -23,28 +31,55 @@ jobs:
           fetch-depth: 0
 
       - id: check
-        name: Check the tag
+        name: Check the branch
         env:
-          TAG: ${{ github.ref_name }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          if ! [[ "$TAG" =~ ^([0-9]+\.[0-9]+\.[0-9]+)rc[0-9]+$ ]]; then
-            echo "::error::'$TAG' is not an rc tag: expected X.Y.ZrcN, e.g. 1.13.0rc1 (no 'v', like the release tags)"
+          if ! [[ "$BRANCH" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc([0-9]+)$ ]]; then
+            echo "::error::'$BRANCH' is not an rc branch: expected X.Y.Z-rcN, e.g. 1.13.0-rc1"
             exit 1
           fi
-          base="${BASH_REMATCH[1]}"
-          current=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-          # An rc comes before its release: X.Y.Z must be newer than the version already released
-          if [ "$(printf '%s\n%s\n' "$current" "$base" | sort -V | tail -1)" = "$current" ]; then
+          base="${BASH_REMATCH[1]}" version="${BASH_REMATCH[1]}rc${BASH_REMATCH[2]}"
+          # An rc is cut from dev, never committed to
+          if ! git merge-base --is-ancestor HEAD origin/dev; then
+            echo "::error::$BRANCH is not a commit of dev: an rc branch is cut from dev and never changed"
+            exit 1
+          fi
+          current=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          if [ -n "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$base" | sort -V | tail -1)" = "$current" ]; then
             echo "::error::$base is not newer than the released $current"
             exit 1
           fi
-          if git rev-parse -q --verify "refs/tags/$base" >/dev/null; then
-            echo "::error::$base is already released"
+          if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+            echo "::error::The tag $version already exists: cut the next rc"
             exit 1
           fi
-          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  # Full matrix, nightly-strength checks: pip-audit is an error on a tag
+      # The exit criteria of the milestone (CONTRIBUTING.md): the milestone X.Y.Z exists and has no open
+      # P0/P1 issue and no open blocking or critical bug
+      - name: Check the milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.check.outputs.base }}
+        run: |
+          number=$(gh api "repos/$GITHUB_REPOSITORY/milestones?state=open&per_page=100" \
+            --jq ".[] | select(.title == \"$BASE\") | .number")
+          if [ -z "$number" ]; then
+            echo "::error::No open milestone '$BASE': every rc belongs to the milestone of its version"
+            exit 1
+          fi
+          open=$(gh api "repos/$GITHUB_REPOSITORY/issues?milestone=$number&state=open&per_page=100" --paginate \
+            --jq '.[] | select(.pull_request | not) | select([.labels[].name] | any(. == "P0" or . == "P1" or . == "sev:blocker" or . == "sev:critical")) | "#\(.number) \(.title)"')
+          if [ -n "$open" ]; then
+            echo "::error::Milestone $BASE still has open P0/P1 or blocking/critical issues:"
+            echo "$open"
+            exit 1
+          fi
+          echo "Milestone $BASE: no open P0/P1 or blocking/critical issue"
+
+  # Full matrix, pip-audit blocking
   tests:
     needs: validate
     uses: ./.github/workflows/tests.yml
@@ -68,7 +103,7 @@ jobs:
         run: pip install -e . pytest
 
       - name: Unit tests
-        run: pytest -q --ignore=tests/e2e
+        run: pytest -q --ignore=tests/e2e --ignore=tests/smoke
 
   build:
     needs: [validate, tests]
@@ -130,8 +165,24 @@ jobs:
           python -c "import ittup, sys; print(ittup.__file__); sys.exit('ittup imported from the sources' if '/site-packages/' not in ittup.__file__ else 0)"
           pytest -v tests/smoke tests/e2e
 
-  publish:
+  # The tag X.Y.ZrcN marks the tested commit: the release check of publish.yml compares the release with it
+  tag:
     needs: [validate, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag the rc
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          git tag "$VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/$VERSION"
+
+  publish:
+    needs: [validate, tag]
     runs-on: ubuntu-latest
     environment:
       name: staging
@@ -179,6 +230,7 @@ jobs:
       - name: Tell the testers
         env:
           VERSION: ${{ needs.validate.outputs.version }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           {
             echo "### ittup $VERSION is on PyPI"
@@ -187,5 +239,6 @@ jobs:
             echo "pip install --upgrade --pre \"ittup==$VERSION\""
             echo '```'
             echo
-            echo "Soak period: at least 3-5 days of real use. Checklist: docs/release-testing.md"
+            echo "Soak period: at least 3-5 days of real use, checklist in docs/release-testing.md."
+            echo "OK: open a PR $BRANCH → main (merge commit). KO: fix on dev and cut the next rc from dev."
           } >> "$GITHUB_STEP_SUMMARY"

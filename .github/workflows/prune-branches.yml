@@ -1,7 +1,7 @@
 name: Prune branches
 
 # Weekly report of the obsolete branches (CONTRIBUTING.md, "Branches"). A branch is deleted only when it is
-# merged into main AND has had no commits for more than 90 days. Branches not merged are never deleted:
+# merged (into dev or main) AND has had no commits for more than 90 days. Branches not merged are never deleted:
 # the inactive ones are only listed, to be checked by hand.
 # The schedule only reports: deleting needs a manual run with dry_run unchecked.
 on:
@@ -50,7 +50,7 @@ jobs:
           {
             echo "### Obsolete branches (dry run: $DRY_RUN)"
             echo
-            echo "Deleted: merged into \`$DEFAULT\` and no commits for more than $INACTIVE_DAYS days."
+            echo "Deleted: merged into \`dev\` or \`main\` and no commits for more than $INACTIVE_DAYS days."
             echo
             echo "| Branch | Last commit | Days | Author | Merged | Action |"
             echo "|---|---|---|---|---|---|"
@@ -58,12 +58,13 @@ jobs:
           git for-each-ref --format='%(refname:short) %(committerdate:unix) %(committerdate:short) %(authorname)' refs/remotes/origin |
           while read -r ref ts date author; do
             branch=${ref#origin/}
-            case "$branch" in "$DEFAULT"|HEAD|origin|release/*|gh-pages|release-please--*) continue ;; esac
+            case "$branch" in "$DEFAULT"|main|dev|HEAD|origin|gh-pages|release-please--*) continue ;; esac
             grep -qxF "$branch" <<<"$open" && continue
             grep -qxF "$branch" <<<"$keep" && continue
             age=$(( (now - ts) / 86400 ))
             [ "$age" -gt "$INACTIVE_DAYS" ] || continue
-            if git merge-base --is-ancestor "$ref" "origin/$DEFAULT"; then
+            # Work branches are merged into dev, rc and hotfix branches into main
+            if git merge-base --is-ancestor "$ref" origin/dev 2>/dev/null || git merge-base --is-ancestor "$ref" origin/main; then
               merged=yes action=delete
             else
               # Never deleted: someone decides by hand

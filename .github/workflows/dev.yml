@@ -1,13 +1,13 @@
 name: Dev build
 
-# The dev channel: every commit on main that passed the tests becomes X.Y.Z.devN.
+# The dev channel: every commit on dev that passed the tests becomes X.Y.Z.devN.
 # The wheel is always kept as a workflow artifact; it goes to TestPyPI only when the repository
 # variable TESTPYPI_PUBLISH is 'true' (trusted publisher: this workflow, environment 'dev').
 on:
   workflow_run:
     workflows: [Tests]
     types: [completed]
-    branches: [main]
+    branches: [dev]
 
 permissions:
   contents: read
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    # Only the tests of a push on main (not nightly, not pull requests), and only when they passed
+    # Only the tests of a push on dev (not nightly, not pull requests), and only when they passed
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     outputs:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 0   # the dev version counts the commits since the last release tag
+          fetch-depth: 0   # the dev version needs the release tags and the commit count
 
       - uses: actions/setup-python@v5
         with:
