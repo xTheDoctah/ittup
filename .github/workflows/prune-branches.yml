@@ -1,0 +1,67 @@
+name: Prune branches
+
+# Weekly report of the obsolete branches (CONTRIBUTING.md, "Branches"). The schedule only reports:
+# deleting needs a manual run with dry_run unchecked. A branch that isn't merged is archived as the tag
+# archive/<branch> before it is deleted, so the work can always be recovered.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only report, delete nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find the obsolete branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == false && 'false' || 'true' }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+        run: |
+          # Branches with an open pull request are active; the ones whose PR is labeled keep are never touched
+          open=$(gh pr list --state open --limit 500 --json headRefName --jq '.[].headRefName')
+          keep=$(gh pr list --state all --label keep --limit 500 --json headRefName --jq '.[].headRefName')
+          now=$(date +%s)
+          {
+            echo "### Obsolete branches (dry run: $DRY_RUN)"
+            echo
+            echo "| Branch | Last commit | Days | Author | Merged | Action |"
+            echo "|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          git for-each-ref --format='%(refname:short) %(committerdate:unix) %(committerdate:short) %(authorname)' refs/remotes/origin |
+          while read -r ref ts date author; do
+            branch=${ref#origin/}
+            case "$branch" in "$DEFAULT"|HEAD|origin|release/*|gh-pages|release-please--*) continue ;; esac
+            grep -qxF "$branch" <<<"$open" && continue
+            grep -qxF "$branch" <<<"$keep" && continue
+            age=$(( (now - ts) / 86400 ))
+            # Branches of AI agents (ai/*, claude/*): warning after 7 days, deleted after 14. The others: 30 and 60
+            case "$branch" in ai/*|claude/*) warn=7 limit=14 ;; *) warn=30 limit=60 ;; esac
+            merged=$(git merge-base --is-ancestor "$ref" "origin/$DEFAULT" && echo yes || echo no)
+            if [ "$merged" = yes ] || [ "$age" -ge "$limit" ]; then
+              action=delete
+            elif [ "$age" -ge "$warn" ]; then
+              action=warning
+            else
+              continue
+            fi
+            echo "$action: $branch (${age} days, merged: $merged)"
+            echo "| \`$branch\` | $date | $age | $author | $merged | $action |" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$action" = delete ] && [ "$DRY_RUN" != "true" ]; then
+              [ "$merged" = no ] && git push origin "$ref:refs/tags/archive/$branch"
+              git push origin --delete "$branch"
+            fi
+          done
