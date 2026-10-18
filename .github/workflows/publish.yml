@@ -26,6 +26,8 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # Always main: without it release-please works on the default branch, which is dev
+          target-branch: main
 
   build:
     needs: release-please
