@@ -104,7 +104,8 @@ and environment `staging` (once, see "PyPI and TestPyPI" below).
    publishing. Its name is the one in the PyPI trusted publisher: don't rename it.
 5. Smoke test: `pip install ittup==1.13.0` from PyPI in a clean virtualenv, then `ittup --help`.
 6. The milestone `1.13.0` is closed; its open issues move to the next milestone or back to the backlog.
-7. A PR **main → dev** ("chore: back-merge main into dev") is opened automatically: merge it with a merge commit.
+7. A PR **main → dev** ("chore: back-merge main into dev", from the copy `back-merge/main`) is opened
+   automatically: merge it with a merge commit.
 
 ## Hotfix
 
@@ -197,7 +198,9 @@ To do on `TehMaat/ittup` (a fork can be set up the same way to try the flow, wit
 - PyPI and TestPyPI trusted publishers: see "PyPI and TestPyPI" above.
 - Rulesets: `dev` (PR required, no force push, no deletion); `main` (the same, merge commits only); rc branches
   `*-rc*` (no update, no force push: they can be created but not changed); tags (no update, no deletion, except
-  `archive/*`). Maintainers (admin) can bypass them.
+  `archive/*`). Maintainers (admin) can bypass them. Plus one ruleset **without any bypass** that forbids deleting
+  `main` and `dev`: "Automatically delete head branches" acts as the person who merges, so an admin bypass let
+  it delete `main` once (the head of a back-merge PR).
 - Settings → Actions → General: "Allow GitHub Actions to create and approve pull requests" (release-please and
   the back-merge PR need it); "Require approval for all external contributors".
 - Settings → General: "Automatically delete head branches", Issues and Discussions on.
