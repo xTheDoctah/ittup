@@ -2,7 +2,8 @@ name: Publish
 
 on:
   push:
-    branches: [main]
+    # release/X.Y: patch releases of an older line while main has unreleased changes (RELEASING.md)
+    branches: [main, "release/**"]
 
 permissions:
   contents: read
@@ -24,6 +25,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          target-branch: ${{ github.ref_name }}
 
   build:
     needs: release-please
@@ -33,6 +35,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
+          fetch-depth: 0   # the rc tags, for the rc check
 
       - uses: actions/setup-python@v5
         with:
@@ -48,6 +51,33 @@ jobs:
             exit 1
           fi
 
+      # The release should be the code of its last rc: only the version and the changelog may differ.
+      # A warning, so a release without an rc still goes out; the repository variable STRICT_RELEASE='true'
+      # makes it an error
+      - name: Check the release is its last rc
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+          STRICT: ${{ vars.STRICT_RELEASE == 'true' }}
+        run: |
+          level=warning; [ "$STRICT" = true ] && level=error
+          rc=$(git tag --list "${TAG}rc*" | sort -V | tail -1)
+          if [ -z "$rc" ]; then
+            echo "::$level::$TAG has no rc tag (${TAG}rc1, ...): it is released without a release candidate"
+          elif ! git diff --quiet "$rc" HEAD -- . ':(exclude)CHANGELOG.md' ':(exclude).release-please-manifest.json' ':(exclude)pyproject.toml' \
+               || git diff "$rc" HEAD -- pyproject.toml | grep -E '^[-+][^-+]' | grep -qvE '^[-+]version = '; then
+            echo "::$level::$TAG differs from its last rc $rc beyond the version and the changelog"
+            git diff --stat "$rc" HEAD
+          else
+            echo "$TAG is the code of $rc"
+            exit 0
+          fi
+          [ "$level" = warning ]
+
+      # Known vulnerabilities in the pinned dependencies: a warning here, rc.yml already blocks on them
+      - name: pip-audit
+        continue-on-error: true
+        run: pip install pip-audit && pip-audit -r requirements.txt
+
       - name: Install build tools
         run: pip install build twine
 
@@ -62,6 +92,8 @@ jobs:
           name: dist
           path: dist/
 
+  # The production channel: the 'pypi' environment requires the approval of the maintainers (RELEASING.md).
+  # Its name is the one in the PyPI trusted publisher: don't rename it
   publish:
     needs: build
     runs-on: ubuntu-latest
@@ -78,3 +110,35 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  # The released version installs from PyPI and starts
+  smoke:
+    needs: [release-please, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install from PyPI in a clean virtualenv
+        env:
+          VERSION: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          # PyPI can take a few minutes to serve a new version
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            "$RUNNER_TEMP/venv/bin/pip" install --no-cache-dir "ittup==$VERSION" pytest && break
+            sleep 30
+          done
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Smoke test
+        env:
+          ITTUP_EXPECTED_VERSION: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          cp -r tests/smoke tests/conftest.py "$RUNNER_TEMP/"
+          cd "$RUNNER_TEMP" && pytest -v smoke
