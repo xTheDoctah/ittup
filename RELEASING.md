@@ -19,7 +19,7 @@ When it isn't, the fixes go to dev and a new rc is cut from dev. Only urgent **h
 
 | Channel | Stability | Audience | Comes from | Published to | Install |
 |---|---|---|---|---|---|
-| **dev** | Low | Team | every commit on `dev` | workflow artifact; TestPyPI when enabled | `pip install --upgrade "git+https://github.com/xTheDoctah/ittup@dev"` or, from TestPyPI, `pip install --upgrade --pre -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ ittup` |
+| **dev** | Low | Team | every commit on `dev` | workflow artifact; TestPyPI when enabled | `pip install --upgrade "git+https://github.com/TehMaat/ittup@dev"` or, from TestPyPI, `pip install --upgrade --pre -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ ittup` |
 | **rc** | Medium-high | Testers | branch `X.Y.Z-rcN` | PyPI, as a pre-release | `pip install --upgrade --pre ittup` or `pip install ittup==X.Y.ZrcN` |
 | **stable** | High | Everybody | `main`, release-please | PyPI | `pip install --upgrade ittup` |
 
@@ -151,10 +151,10 @@ Only an owner of the `ittup` project can do this (today TehMaat). Section "Add a
 | Workflow name | `publish.yml` | `rc.yml` |
 | Environment name | `pypi` | `staging` |
 
-- The owner is the repository the release runs from: the canonical one. Don't add `xTheDoctah/ittup` as a
-  publisher of the real project: the fork could then publish versions of `ittup` to every user. On the fork
-  the `publish` and `rc` publishing jobs fail at the PyPI step (no trusted publisher); everything before it
-  (tests, build, wheel checks, tag) works.
+- The owner is the repository the release runs from: only `TehMaat/ittup`. Never add a fork as a publisher
+  of the real project: the fork could then publish versions of `ittup` to every user. On a fork (e.g. the one
+  used to present these changes) the PyPI step of `publish` and `rc` fails (no trusted publisher); everything
+  before it (tests, build, wheel checks, tags) works.
 - An rc published on PyPI can't be deleted and re-uploaded with the same number: a broken rc is *yanked* and the
   next rc gets the next number.
 - Recommended in the project settings: two-factor authentication for every owner and maintainer; the second
@@ -170,12 +170,12 @@ publisher" → GitHub:
 | Field | Value |
 |---|---|
 | PyPI Project Name | `ittup` |
-| Owner | `xTheDoctah` (the fork) or `TehMaat` (upstream): the repository whose dev builds you want |
+| Owner | `TehMaat` |
 | Repository name | `ittup` |
 | Workflow name | `dev.yml` |
 | Environment name | `dev` |
 
-Then turn the upload on: `gh variable set TESTPYPI_PUBLISH -b true -R <owner>/ittup`.
+Then turn the upload on: `gh variable set TESTPYPI_PUBLISH -b true -R TehMaat/ittup`.
 TestPyPI is a test index: it may be wiped, and its other packages are not trusted. That's why the install
 command takes the dependencies from PyPI (`--extra-index-url https://pypi.org/simple/`).
 
@@ -189,7 +189,7 @@ command takes the dependencies from PyPI (`--extra-index-url https://pypi.org/si
 
 ## Setup (once per repository)
 
-Already applied on `xTheDoctah/ittup`. On another repository (e.g. the upstream one):
+To do on `TehMaat/ittup` (a fork can be set up the same way to try the flow, without the PyPI part):
 
 - Create `dev` from main and make it the default branch.
 - Settings → Environments: `dev`, `staging`, `pypi` with the protections above; on `pypi` add both maintainers as

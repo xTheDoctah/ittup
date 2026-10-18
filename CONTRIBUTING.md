@@ -7,7 +7,7 @@ tests and the rules for AI. Releases and distribution channels are in [RELEASING
 ## Local setup
 
 ```bash
-git clone https://github.com/xTheDoctah/ittup.git && cd ittup   # the default branch is dev
+git clone https://github.com/TehMaat/ittup.git && cd ittup   # the default branch is dev
 python -m venv .venv && . .venv/bin/activate
 pip install -e . pytest pytest-cov pre-commit
 pre-commit install --hook-type pre-commit --hook-type pre-push

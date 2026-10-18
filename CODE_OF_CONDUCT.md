@@ -10,5 +10,5 @@ The maintainers may remove comments, commits, code and issues that don't follow 
 temporarily or permanently anyone who doesn't respect it.
 
 To report a behavior, write privately to the maintainers through a
-[private security advisory](https://github.com/xTheDoctah/ittup/security/advisories/new)
+[private security advisory](https://github.com/TehMaat/ittup/security/advisories/new)
 (it reaches only them) or to the maintainers on GitHub. Every report is reviewed confidentially.
